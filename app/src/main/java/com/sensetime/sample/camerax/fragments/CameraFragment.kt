@@ -4,11 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.SurfaceTexture
+import android.graphics.PixelFormat
 import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
 import android.util.DisplayMetrics
@@ -19,10 +20,8 @@ import android.view.ViewGroup
 import android.webkit.MimeTypeMap
 import android.widget.ImageButton
 import androidx.camera.core.*
-import androidx.camera.core.impl.PreviewConfig
 import androidx.camera.core.impl.VideoCaptureConfig
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import androidx.core.net.toFile
@@ -37,17 +36,21 @@ import com.sensetime.sample.camerax.MainActivity
 import com.sensetime.sample.camerax.R
 import com.sensetime.sample.camerax.VolumeDownLiveData
 import com.sensetime.sample.camerax.databinding.CameraUiContainerBinding
+import com.sensetime.sample.camerax.gl.CameraGLRenderer
 import com.sensetime.sample.camerax.gl.GLPreviewBuilder
+import com.sensetime.sample.camerax.gl.GLRenderer
 import com.sensetime.sample.camerax.ui.GLTextureView
 import com.sensetime.sample.camerax.utils.ANIMATION_FAST_MILLIS
 import com.sensetime.sample.camerax.utils.ANIMATION_SLOW_MILLIS
 import kotlinx.android.synthetic.main.fragment_camera.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import java.io.File
-import java.lang.Exception
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
@@ -58,9 +61,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-//使用CameraX拍摄视频
-//对外接口是打开摄像头、关闭摄像头、视频输入、视频输出、视频滤镜处理
-
+//使用CameraX拍摄视频,Open GL渲染显示
 typealias LumaListener = (luma:Double) -> Unit
 
 class CameraFragment:Fragment() {
@@ -116,12 +117,18 @@ class CameraFragment:Fragment() {
         //关闭后台线程池
         cameraExecutor.shutdown()
 
-        //TODO 注销LiveData观察
         displayManager.unregisterDisplayListener( displayListener )
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? =
-            inflater.inflate(R.layout.fragment_camera,container,false)
+            inflater.inflate(R.layout.fragment_camera,container,false).apply {
+//                viewFinder = this.findViewById(R.id.view_finder) as GLTextureView
+//                viewFinder.setEGLContextClientVersion(2)
+//                viewFinder.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+//                viewFinder.setRenderer(GLRenderer( viewFinder))
+//                viewFinder.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY)
+//                viewFinder.requestRender()
+            }
 
     private fun setGalleryThumbnail( uri: Uri){
         val thumbnail = cameraContainer.findViewById<ImageButton>(R.id.photo_view_button)
@@ -136,11 +143,10 @@ class CameraFragment:Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         cameraContainer = view as ConstraintLayout
-        viewFinder = cameraContainer.findViewById(R.id.view_finder )
-
+        viewFinder = GLTextureView( requireContext() )
+        viewFinder.setEGLContextClientVersion(2)
+        viewFinder.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         cameraExecutor = Executors.newSingleThreadExecutor()
-
-        //
 
         VolumeDownLiveData.getInstance()?.apply {
 
@@ -156,11 +162,10 @@ class CameraFragment:Fragment() {
 
         outputDirectory = MainActivity.getOutputDirectory( requireContext() )
 
-        viewFinder.post{
-            displayId = viewFinder.display.displayId
+        cameraContainer.post{
+            displayId = cameraContainer.display.displayId
             updateCameraUi()
             bindCameraUseCases()
-
         }
     }
 
@@ -173,20 +178,20 @@ class CameraFragment:Fragment() {
 
     @SuppressLint("RestrictedApi")
     fun bindCameraUseCases(){
-        val metrics = DisplayMetrics().also { viewFinder.display.getRealMetrics( it )  }
+        val metrics = DisplayMetrics().also { cameraContainer.display.getRealMetrics( it )  }
 
         val screenAspectRatio = aspectRatio( metrics.widthPixels,metrics.heightPixels )
 
-        val rotation = viewFinder.display.rotation
+        val rotation = cameraContainer.display.rotation
 
         val cameraSelector = CameraSelector.Builder().requireLensFacing( lensFacing ).build()
         val cameraProviderFuture = ProcessCameraProvider.getInstance( requireContext())
         cameraProviderFuture.addListener( Runnable {
             val cameraProvider :ProcessCameraProvider = cameraProviderFuture.get()
 
-            preview = Preview.Builder().setTargetAspectRatio( screenAspectRatio )
-                   .setTargetRotation( rotation ).build()
-            preview = GLPreviewBuilder.build(screenAspectRatio,rotation,viewFinder,cameraExecutor )
+//            preview = Preview.Builder().setTargetAspectRatio( screenAspectRatio )
+//                   .setTargetRotation( rotation ).build()
+            preview = GLPreviewBuilder.build(screenAspectRatio,rotation,viewFinder,cameraContainer,cameraExecutor )
 
             imageCapture = ImageCapture.Builder()
                     .setCaptureMode( ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY )

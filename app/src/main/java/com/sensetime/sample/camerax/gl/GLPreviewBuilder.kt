@@ -1,26 +1,30 @@
 package com.sensetime.sample.camerax.gl
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.hardware.display.DisplayManager
 import android.os.Build
+import android.util.DisplayMetrics
+import android.util.Log
 import android.util.Size
-import android.view.Display
-import android.view.Surface
-import android.view.TextureView
-import android.view.ViewGroup
+import android.view.*
 import androidx.annotation.RequiresApi
 import androidx.camera.core.Preview
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.util.Consumer
 import com.sensetime.sample.camerax.ui.GLTextureView
 import com.sensetime.sample.camerax.utils.OpenGLUtils
 import java.lang.IllegalArgumentException
 import java.lang.ref.WeakReference
+import java.util.*
 import java.util.concurrent.Executor
+import kotlin.math.roundToInt
 
 @RequiresApi(Build.VERSION_CODES.N)
 @SuppressLint("RestrictedApi")
-class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewFinderRef:WeakReference<GLTextureView> ,executor: Executor) {
+class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewFinderRef:WeakReference<GLTextureView> ,var parent:WeakReference<ConstraintLayout>,executor: Executor) {
 
     //预览的实例
     val useCase:Preview
@@ -60,32 +64,47 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
 
         val viewFinder = viewFinderRef.get() ?: throw IllegalArgumentException(
                 "Invalid referernce to view finder used " )
-        viewFinderDisplay = viewFinder.display.displayId
+        viewFinderDisplay = this.parent.get()?.display!!.displayId
         viewFinderRotation = getDisplaySurfaceRotation( viewFinder.display ) ?:0
 
         useCase = Preview.Builder().apply {
             setTargetAspectRatio( aspectRatio)
             setTargetRotation( rotation)
             }.build()
-
+        val metrics = DisplayMetrics().also {  parent.get()?.display!!.getRealMetrics( it )  }
+        var size = Size( metrics.widthPixels, metrics.heightPixels )
+        var surface = createGLInputSurface( size, viewFinder)
         useCase.setSurfaceProvider {
             if( isShuttingDown( viewFinder ) ){
                 it.willNotProvideSurface()
                 return@setSurfaceProvider
             }
-
-            var surface = createGLInputSurface( it.resolution, viewFinder)
-
             it.provideSurface( surface, executor,  Consumer { closeInputSurface(surface)  } )
         }
+
+        viewFinder.addOnLayoutChangeListener { view, left, top, right, bottom, _, _, _, _ ->
+
+            val viewFinder = view as TextureView
+            val newViewFinderDimens = Size( right - left ,bottom -top )
+            val rotation = getDisplaySurfaceRotation( viewFinder.display )
+            updateTransform( viewFinder,rotation,bufferDimens,newViewFinderDimens )
+        }
+
+        displayManager = viewFinder.context.getSystemService( Context.DISPLAY_SERVICE) as DisplayManager
+        displayManager.registerDisplayListener( displayListener, null )
+
+        viewFinder.addOnAttachStateChangeListener( object  : View.OnAttachStateChangeListener{
+            override fun onViewAttachedToWindow(v: View?) = Unit
+            override fun onViewDetachedFromWindow(v: View?) {
+                displayManager.unregisterDisplayListener( displayListener )
+            }
+        })
 
     }
     @SuppressLint("Recycle")
     private fun createGLInputSurface(size: Size, viewFinder: GLTextureView): Surface {
 
-        val parent = viewFinder.parent as ViewGroup
-        parent.removeView( viewFinder)
-        parent.addView( viewFinder ,0)
+        val parent = this.parent.get()
         //绑定外部纹理ID
 //        viewFinder.surfaceTexture = SurfaceTexture( OpenGLUtils.getExternalOESTextureID() )
         //相机输出到外部纹理上去
@@ -96,8 +115,8 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
         cameraSurfaceTexture.setOnFrameAvailableListener {
             viewFinder.requestRender()
         }
-
-        viewFinder.surfaceTextureListener = object:TextureView.SurfaceTextureListener{
+        Log.d( "GLTextureView","add listener !!!!!!!!!!!!")
+        viewFinder.addSurfaceTextureListener(object:TextureView.SurfaceTextureListener{
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) = Unit
 
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture?)=Unit
@@ -107,15 +126,18 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
 
                 //TODO 初始化OPENGL把相机输出到SurfaceTexture的图形纹理，显示在GLTextureView上
-                val glRenderer:GLRenderer = CameraGLRenderer( cameraSurfaceTexture, mCameraTextureId, viewFinder)
+                val config = CameraGLRenderer.Config( size,size)
+                config.orientation = if( viewFinderRotation==90 || viewFinderRotation == 270 ) CameraGLRenderer.Config.ORI_MODE_HORIZON else CameraGLRenderer.Config.ORI_MODE_VERTICAL
+                val glRenderer:GLRenderer = CameraGLRenderer( cameraSurfaceTexture, mCameraTextureId, viewFinder,config)
                 //TODO 对Surface纹理进行滤镜，比如黑白滤镜
-                glRenderer.setFilter( GLFilterFactory.NONE)
                 viewFinder.setRenderer( glRenderer )
+                glRenderer.setFilter( GLFilterFactory.NONE)
                 viewFinder.renderMode = GLTextureView.RENDERMODE_WHEN_DIRTY
+
             }
 
-        }
-
+        })
+        parent?.addView( viewFinder)
         //当大小调整的时候相应调整
         updateTransform( viewFinder, getDisplaySurfaceRotation( viewFinder.display), size,viewFinderDimens )
         //预览画面会输出到CameraSurfaceTexture纹理当中
@@ -128,9 +150,57 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
         cameraSurfaceTexture.release()
     }
 
-
+    //TODO
     private fun updateTransform( textureView:TextureView? , rotation:Int ?,newBufferDimens:Size,newViewFinderDimens:Size){
 
+        val textureView = textureView ?: return
+        if( rotation == viewFinderRotation
+                && Objects.equals( newBufferDimens,bufferDimens )
+                && Objects.equals( newViewFinderDimens, viewFinderDimens ) ){
+            return
+        }
+
+        rotation ?: return
+
+        viewFinderRotation = rotation
+
+        if( newBufferDimens.width == 0 || newBufferDimens.height == 0 ){
+            return
+        }else {
+            bufferDimens = newBufferDimens
+        }
+
+        if( newViewFinderDimens.width == 0 || newBufferDimens.height == 0 ){
+            return
+        }else{
+            viewFinderDimens = newViewFinderDimens
+        }
+        //TODO ?
+        val matrix = Matrix()
+
+        val centerX = viewFinderDimens.width / 2f
+        val centerY = viewFinderDimens.height / 2f
+
+        matrix.postRotate( -viewFinderRotation!!.toFloat(), centerX, centerY)
+
+        val bufferRatio = bufferDimens.height/bufferDimens.width.toFloat()
+
+        val scaleWidth:Int
+        val scaledHeight:Int
+
+        if( viewFinderDimens.width > viewFinderDimens.height ){
+            scaledHeight = viewFinderDimens.width
+            scaleWidth = (viewFinderDimens.width * bufferRatio).roundToInt()
+        }else{
+            scaledHeight = viewFinderDimens.height
+            scaleWidth = (viewFinderDimens.height * bufferRatio).roundToInt()
+        }
+
+        val xScale = scaleWidth / viewFinderDimens.width.toFloat()
+        val yScale = scaledHeight / viewFinderDimens.height.toFloat()
+
+        matrix.preScale( xScale,yScale,centerX,centerY )
+        textureView.setTransform( matrix )
     }
 
     companion object{
@@ -144,8 +214,8 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
 
         }
 
-        fun build( aspectRatio: Int , rotation: Int,viewFinder:GLTextureView,executor: Executor) =
-                GLPreviewBuilder( aspectRatio,rotation, WeakReference( viewFinder ),executor ).useCase
+        fun build( aspectRatio: Int , rotation: Int,viewFinder:GLTextureView,parent:ConstraintLayout,executor: Executor) =
+                GLPreviewBuilder( aspectRatio,rotation, WeakReference( viewFinder ),WeakReference(parent),executor ).useCase
     }
 
 }

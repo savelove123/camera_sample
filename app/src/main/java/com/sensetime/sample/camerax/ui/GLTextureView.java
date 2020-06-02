@@ -218,6 +218,7 @@ public class GLTextureView extends TextureView
      * @param renderer the renderer to use to perform OpenGL drawing.
      */
     public void setRenderer(Renderer renderer) {
+        Log.d(TAG, "set renderer !@!!!");
         checkRenderThreadState();
         if (eglConfigChooser == null) {
             eglConfigChooser = new SimpleEGLConfigChooser(true);
@@ -491,15 +492,17 @@ public class GLTextureView extends TextureView
     }
 
     public void addSurfaceTextureListener(SurfaceTextureListener listener) {
+        Log.d( TAG , "addSurfaceTextureListener");
         surfaceTextureListeners.add(listener);
     }
 
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-        surfaceCreated(surface);
-        surfaceChanged(surface, 0, width, height);
+
         for (SurfaceTextureListener l : surfaceTextureListeners) {
             l.onSurfaceTextureAvailable(surface, width, height);
         }
+        surfaceCreated(surface);
+        surfaceChanged(surface, 0, width, height);
     }
 
     public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {

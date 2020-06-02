@@ -159,7 +159,9 @@ public class OpenGLUtils {
         int[] link = new int[1];
         iVShader = loadShader(strVSource, GLES20.GL_VERTEX_SHADER);
         if (iVShader == 0) {
-            Log.d("Load Program", "Vertex Shader Failed");
+			int error = GLES20.glGetError();
+
+            Log.d("Load Program", "Vertex Shader Failed  " + error ) ;
             return 0;
         }
         iFShader = loadShader(strFSource, GLES20.GL_FRAGMENT_SHADER);

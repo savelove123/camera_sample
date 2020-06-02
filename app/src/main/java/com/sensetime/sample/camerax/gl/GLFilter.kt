@@ -29,8 +29,8 @@ import java.util.*
             .order( ByteOrder.nativeOrder()).asFloatBuffer()
     protected var mDefaultGLTextureBuffer:FloatBuffer = ByteBuffer.allocateDirect( TextureRotationUtil.TEXTURE_NO_ROTATION.size * 4 )
             .order( ByteOrder.nativeOrder()).asFloatBuffer()
-//    protected var mSurfaceWidth = UN_INITIALIZE
-//    protected var mSurfaceHeight = UN_INITIALIZE
+    protected var mSurfaceWidth = UN_INITIALIZE
+    protected var mSurfaceHeight = UN_INITIALIZE
 
     init{
 
@@ -63,7 +63,7 @@ import java.util.*
     fun getProgram() = mGLProgramId
 
     protected fun runOnDraw( runnable: Runnable){
-        synchronized( mRunOnDraw ){
+        synchronized(lock = mRunOnDraw){
             mRunOnDraw.addLast( runnable )
         }
     }
@@ -79,6 +79,12 @@ import java.util.*
     fun onOutputSizeChanged(width:Int , height :Int){
         mOutputWidth = width
         mOutputHeight = height
+    }
+
+    fun onDisplaySizeChanged( width: Int , height: Int ){
+        mSurfaceWidth = width
+        mSurfaceHeight = height
+
     }
 
     fun unLoad(){
@@ -127,8 +133,8 @@ import java.util.*
         return OpenGLUtils.ON_DRAWN
     }
 
-    open fun onDrawFrame(textureId: Int ){
-        onDrawFrame( textureId, mGLCubeBuffer, mDefaultGLTextureBuffer )
+    open fun onDrawFrame(textureId: Int ):Int {
+        return onDrawFrame( textureId, mGLCubeBuffer, mDefaultGLTextureBuffer )
     }
 
 

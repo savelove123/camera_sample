@@ -7,8 +7,10 @@ import com.sensetime.sample.camerax.utils.TextureRotationUtil
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 
-abstract class GLRenderer(var mGLTextureView: GLTextureView) :GLTextureView.Renderer,UIComponent{
+open class GLRenderer(var mGLTextureView: GLTextureView) :GLTextureView.Renderer,UIComponent{
 
     protected var glFilter:GLFilter?
     protected var glFilterType:Int
@@ -24,8 +26,8 @@ abstract class GLRenderer(var mGLTextureView: GLTextureView) :GLTextureView.Rend
     //预览使用的纹理坐标
     protected val mPreviewGLTextureBuffer:FloatBuffer
 
-    protected var surfaceWidth:Int = 0
-    protected var surfaceHeight:Int = 0
+    protected var mSurfaceWidth:Int = 0
+    protected var mSurfaceHeight:Int = 0
 
     protected var outputImageWidth:Int = 0
     protected var outputImageHeight:Int = 0
@@ -46,16 +48,13 @@ abstract class GLRenderer(var mGLTextureView: GLTextureView) :GLTextureView.Rend
         mPreviewGLTextureBuffer = ByteBuffer.allocateDirect( TextureRotationUtil.TEXTURE_NO_ROTATION.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         mPreviewGLTextureBuffer.put( TextureRotationUtil.TEXTURE_NO_ROTATION ).position(0)
 
-        mGLTextureView.setEGLContextClientVersion(2)
-     //   glTextureView.setRenderer( this )
-        mGLTextureView.renderMode=GLTextureView.RENDERMODE_WHEN_DIRTY
 
     }
 
     protected open fun onFilterChanged(){
         glFilter?:return
 
-//        glFilter?.onDisplaySizeChanged( surfaceWidth,surfaceHeight )
+        glFilter?.onDisplaySizeChanged( mSurfaceWidth,mSurfaceHeight )
         glFilter?.onOutputSizeChanged( outputImageWidth,outputImageHeight )
     }
 
@@ -72,5 +71,20 @@ abstract class GLRenderer(var mGLTextureView: GLTextureView) :GLTextureView.Rend
         mGLTextureView.requestRender()
         this.glFilterType = filterType
     }
+
+    override fun onDrawFrame(gl: GL10?)=Unit
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int)=Unit
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) =Unit
+
+    override fun onResume() =Unit
+
+    override fun onPause() =Unit
+    override fun onStart() =Unit
+
+    override fun onStop() =Unit
+
+    override fun onDestroy() =Unit
 
 }
