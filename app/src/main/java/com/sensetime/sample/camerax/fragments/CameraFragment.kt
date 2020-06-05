@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.SurfaceTexture
 import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
 import android.media.MediaScannerConnection
@@ -14,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -37,11 +39,13 @@ import com.sensetime.sample.camerax.R
 import com.sensetime.sample.camerax.VolumeDownLiveData
 import com.sensetime.sample.camerax.databinding.CameraUiContainerBinding
 import com.sensetime.sample.camerax.gl.CameraGLRenderer
+import com.sensetime.sample.camerax.gl.GLFilter
 import com.sensetime.sample.camerax.gl.GLPreviewBuilder
 import com.sensetime.sample.camerax.gl.GLRenderer
 import com.sensetime.sample.camerax.ui.GLTextureView
 import com.sensetime.sample.camerax.utils.ANIMATION_FAST_MILLIS
 import com.sensetime.sample.camerax.utils.ANIMATION_SLOW_MILLIS
+import com.sensetime.sample.camerax.utils.OpenGLUtils
 import kotlinx.android.synthetic.main.fragment_camera.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,6 +85,14 @@ class CameraFragment:Fragment() {
     private var imageAnalyzer:ImageAnalysis ?= null
     private var camera: Camera?=null
     private var binding : CameraUiContainerBinding ?= null
+
+    lateinit var cameraSurfaceTexture:SurfaceTexture
+    private var mCameraTextureId : Int = -1
+
+    private var mOESTextureId = -1
+    private var mFilter : GLFilter = GLFilter()
+    lateinit var  glRenderer:GLRenderer
+
     private val displayManager by lazy {
         requireContext().getSystemService( Context.DISPLAY_SERVICE) as DisplayManager
     }
@@ -143,9 +155,24 @@ class CameraFragment:Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         cameraContainer = view as ConstraintLayout
-        viewFinder = GLTextureView( requireContext() )
+        viewFinder = cameraContainer.findViewById(R.id.viewFinder) as GLTextureView
         viewFinder.setEGLContextClientVersion(2)
         viewFinder.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+        //TODO
+        val metrics = DisplayMetrics()
+        var size = Size( metrics.widthPixels, metrics.heightPixels )
+        mCameraTextureId =  OpenGLUtils.getExternalOESTextureID()
+        cameraSurfaceTexture = SurfaceTexture(mCameraTextureId )
+        cameraSurfaceTexture.setOnFrameAvailableListener {
+            viewFinder.requestRender()
+        }
+        val config = CameraGLRenderer.Config( size,size)
+        var viewFinderRotation = GLPreviewBuilder.getDisplaySurfaceRotation(cameraContainer.display) ?:0
+
+        config.orientation = if( viewFinderRotation==90 || viewFinderRotation == 270 ) CameraGLRenderer.Config.ORI_MODE_HORIZON else CameraGLRenderer.Config.ORI_MODE_VERTICAL
+        glRenderer = CameraGLRenderer( cameraSurfaceTexture, mCameraTextureId, viewFinder,config)
+        viewFinder.setRenderer( glRenderer )
+
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         VolumeDownLiveData.getInstance()?.apply {
@@ -191,7 +218,7 @@ class CameraFragment:Fragment() {
 
 //            preview = Preview.Builder().setTargetAspectRatio( screenAspectRatio )
 //                   .setTargetRotation( rotation ).build()
-            preview = GLPreviewBuilder.build(screenAspectRatio,rotation,viewFinder,cameraContainer,cameraExecutor )
+            preview = GLPreviewBuilder.build(screenAspectRatio,rotation, glRenderer,cameraSurfaceTexture, viewFinder,cameraContainer,cameraExecutor )
 
             imageCapture = ImageCapture.Builder()
                     .setCaptureMode( ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY )
@@ -218,9 +245,9 @@ class CameraFragment:Fragment() {
             cameraProvider.unbindAll()
             try {
                 camera = if(isRecord ){
-                    cameraProvider.bindToLifecycle( this,cameraSelector,preview,imageCapture,videoCapture)
+                    cameraProvider.bindToLifecycle( this,cameraSelector,imageCapture,videoCapture)
                 }else {
-                    cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer)
+                    cameraProvider.bindToLifecycle(this, cameraSelector, imageCapture, imageAnalyzer)
                 }
                 if( isRecord ){
                     val videoFile = createFile( outputDirectory, FILENAME_FORMAT,VIDEO_EXTENSION )

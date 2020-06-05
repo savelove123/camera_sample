@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
+import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
 import android.util.Log;
 
@@ -148,7 +149,7 @@ public class OpenGLUtils {
 			is.close();
           	}catch (IOException e){
 	          e.printStackTrace();  
-	      }  	  
+	      }
 	      return image;  	  
 	}  
     
@@ -161,12 +162,12 @@ public class OpenGLUtils {
         if (iVShader == 0) {
 			int error = GLES20.glGetError();
 
-            Log.d("Load Program", "Vertex Shader Failed  " + error ) ;
+            Log.e("Load Program", "Vertex Shader Failed  " + error ) ;
             return 0;
         }
         iFShader = loadShader(strFSource, GLES20.GL_FRAGMENT_SHADER);
         if (iFShader == 0) {
-            Log.d("Load Program", "Fragment Shader Failed");
+            Log.e("Load Program", "Fragment Shader Failed");
             return 0;
         }
 
@@ -190,6 +191,9 @@ public class OpenGLUtils {
 	private static int loadShader(final String strSource, final int iType) {
         int[] compiled = new int[1];
         int iShader = GLES20.glCreateShader(iType);
+		if( iShader == 0 ){
+			Log.e("OpenGLUtils", "create shader failed !!" + GLES20.glGetError() );
+		}
         GLES20.glShaderSource(iShader, strSource);
         GLES20.glCompileShader(iShader);
         GLES20.glGetShaderiv(iShader, GLES20.GL_COMPILE_STATUS, compiled, 0);

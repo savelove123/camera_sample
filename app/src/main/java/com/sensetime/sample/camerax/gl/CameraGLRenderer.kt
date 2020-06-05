@@ -4,6 +4,7 @@ import android.graphics.SurfaceTexture
 import android.opengl.GLES20
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.util.Size
 import com.sensetime.sample.camerax.ui.GLTextureView
 import java.lang.Exception
@@ -36,6 +37,7 @@ class CameraGLRenderer(var mCameraSurfaceTexture: SurfaceTexture, mCameraTexture
     }
 
     override fun onDrawFrame(gl: GL10?) {
+        Log.e("OpenGL", "renderer draw frame start ")
 
         GLES20.glClearColor(0.0f,0.0f,0.0f,0.0f)
         GLES20.glClear( GLES20.GL_COLOR_BUFFER_BIT and GLES20.GL_DEPTH_BUFFER_BIT)
@@ -51,7 +53,7 @@ class CameraGLRenderer(var mCameraSurfaceTexture: SurfaceTexture, mCameraTexture
         mCameraInputFilter.setTextureTransformMatrix( mtx )
 
         var textureId = mCameraInputFilter.onDrawFrame( mTextureId )
-
+        Log.e("OpenGL", "renderer draw frame end ")
 
     }
 
@@ -75,6 +77,7 @@ class CameraGLRenderer(var mCameraSurfaceTexture: SurfaceTexture, mCameraTexture
 
         mCameraInputFilter.init()
         mGLFilter.init()
+        onFilterChanged()
     }
 
     override fun onResume() {

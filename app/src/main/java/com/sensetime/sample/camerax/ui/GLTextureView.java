@@ -498,11 +498,12 @@ public class GLTextureView extends TextureView
 
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
 
+
+        surfaceCreated(surface);
+        surfaceChanged(surface, 0, width, height);
         for (SurfaceTextureListener l : surfaceTextureListeners) {
             l.onSurfaceTextureAvailable(surface, width, height);
         }
-        surfaceCreated(surface);
-        surfaceChanged(surface, 0, width, height);
     }
 
     public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {

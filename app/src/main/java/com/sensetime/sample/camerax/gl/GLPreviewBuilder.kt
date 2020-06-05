@@ -24,7 +24,7 @@ import kotlin.math.roundToInt
 
 @RequiresApi(Build.VERSION_CODES.N)
 @SuppressLint("RestrictedApi")
-class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewFinderRef:WeakReference<GLTextureView> ,var parent:WeakReference<ConstraintLayout>,executor: Executor) {
+class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,var glRenderer: GLRenderer, surfaceTexture: SurfaceTexture ,viewFinderRef:WeakReference<GLTextureView> ,var parent:WeakReference<ConstraintLayout>,executor: Executor) {
 
     //预览的实例
     val useCase:Preview
@@ -58,14 +58,14 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
 
     private var mOESTextureId = -1
     private var mFilter :GLFilter = GLFilter()
-
-
-    init{
+      init{
 
         val viewFinder = viewFinderRef.get() ?: throw IllegalArgumentException(
                 "Invalid referernce to view finder used " )
         viewFinderDisplay = this.parent.get()?.display!!.displayId
-        viewFinderRotation = getDisplaySurfaceRotation( viewFinder.display ) ?:0
+        viewFinderRotation = getDisplaySurfaceRotation(  this.parent.get()?.display ) ?:0
+
+        cameraSurfaceTexture = surfaceTexture
 
         useCase = Preview.Builder().apply {
             setTargetAspectRatio( aspectRatio)
@@ -73,7 +73,11 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
             }.build()
         val metrics = DisplayMetrics().also {  parent.get()?.display!!.getRealMetrics( it )  }
         var size = Size( metrics.widthPixels, metrics.heightPixels )
+
         var surface = createGLInputSurface( size, viewFinder)
+
+
+        //TODO 对Surface纹理进行滤镜，比如黑白滤镜
         useCase.setSurfaceProvider {
             if( isShuttingDown( viewFinder ) ){
                 it.willNotProvideSurface()
@@ -110,12 +114,8 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
         //相机输出到外部纹理上去
         //然后CameraInputFilter对外部纹理进行处理得到相机的画面
         //然后是滤镜对相机的画面进行二次处理
-        mCameraTextureId =  OpenGLUtils.getExternalOESTextureID()
-        cameraSurfaceTexture = SurfaceTexture(mCameraTextureId )
-        cameraSurfaceTexture.setOnFrameAvailableListener {
-            viewFinder.requestRender()
-        }
-        Log.d( "GLTextureView","add listener !!!!!!!!!!!!")
+
+
         viewFinder.addSurfaceTextureListener(object:TextureView.SurfaceTextureListener{
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture?, width: Int, height: Int) = Unit
 
@@ -126,18 +126,14 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture?, width: Int, height: Int) {
 
                 //TODO 初始化OPENGL把相机输出到SurfaceTexture的图形纹理，显示在GLTextureView上
-                val config = CameraGLRenderer.Config( size,size)
-                config.orientation = if( viewFinderRotation==90 || viewFinderRotation == 270 ) CameraGLRenderer.Config.ORI_MODE_HORIZON else CameraGLRenderer.Config.ORI_MODE_VERTICAL
-                val glRenderer:GLRenderer = CameraGLRenderer( cameraSurfaceTexture, mCameraTextureId, viewFinder,config)
-                //TODO 对Surface纹理进行滤镜，比如黑白滤镜
-                viewFinder.setRenderer( glRenderer )
+
+
                 glRenderer.setFilter( GLFilterFactory.NONE)
                 viewFinder.renderMode = GLTextureView.RENDERMODE_WHEN_DIRTY
 
             }
 
         })
-        parent?.addView( viewFinder)
         //当大小调整的时候相应调整
         updateTransform( viewFinder, getDisplaySurfaceRotation( viewFinder.display), size,viewFinderDimens )
         //预览画面会输出到CameraSurfaceTexture纹理当中
@@ -214,8 +210,8 @@ class GLPreviewBuilder private constructor( aspectRatio: Int,rotation: Int,viewF
 
         }
 
-        fun build( aspectRatio: Int , rotation: Int,viewFinder:GLTextureView,parent:ConstraintLayout,executor: Executor) =
-                GLPreviewBuilder( aspectRatio,rotation, WeakReference( viewFinder ),WeakReference(parent),executor ).useCase
+        fun build( aspectRatio: Int , rotation: Int, glRenderer: GLRenderer, surfaceTexture: SurfaceTexture ,viewFinder:GLTextureView,parent:ConstraintLayout,executor: Executor) =
+                GLPreviewBuilder( aspectRatio,rotation,glRenderer, surfaceTexture ,WeakReference( viewFinder ),WeakReference(parent),executor ).useCase
     }
 
 }

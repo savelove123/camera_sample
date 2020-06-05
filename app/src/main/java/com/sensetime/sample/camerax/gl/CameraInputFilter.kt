@@ -1,6 +1,8 @@
 package com.sensetime.sample.camerax.gl
 
+import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.util.Log
 import com.sensetime.sample.camerax.utils.OpenGLUtils
 
 /**
@@ -27,15 +29,53 @@ class CameraInputFilter() :GLFilter(CAMERA_INPUT_VERTEX_SHADER, CAMERA_INPUT_FRA
 
     override fun onDrawFrame(textureId: Int) :Int {
 
+        Log.e("OpenGL", "filter draw frame start ")
+
         mFrameBuffers ?: return OpenGLUtils.NO_TEXTURE
+        Log.e("OpenGL", "filter mFrameBuffers start ")
+
         mFrameBufferTextures ?: return OpenGLUtils.NO_TEXTURE
+        Log.e("OpenGL", "filter mFrameBufferTextures start ")
+
         GLES20.glViewport( 0,0,mOutputWidth,mOutputHeight )
         GLES20.glBindFramebuffer( GLES20.GL_FRAMEBUFFER, mFrameBuffers!![0] )
+        GLES20.glUniformMatrix4fv(mTextureTransformMatrixLocation, 1, false, mTextureTransformMatrix, 0)
 
-        super.onDrawFrame(textureId)
+        GLES20.glUseProgram( mGLProgramId )
+
+        if(!isInitialized() ){
+            Log.e("OpenGL", "filter draw frame error is no initlized  ")
+
+            return OpenGLUtils.NOT_INIT
+        }
+
+        mGLCubeBuffer.position( 0 )
+        //由于我们顶点坐标只用了x,y 因此，size是2
+        GLES20.glVertexAttribPointer( mGLAttributePosition,2,GLES20.GL_FLOAT,false,0,mGLCubeBuffer  )
+        GLES20.glEnableVertexAttribArray( mGLAttributePosition )
+
+        //绑定纹理的坐标缓冲区
+        mDefaultGLTextureBuffer.position( 0 )
+        GLES20.glVertexAttribPointer( mGLAttributeTextureCoordinate,2,GLES20.GL_FLOAT,false,0,mDefaultGLTextureBuffer )
+        GLES20.glEnableVertexAttribArray( mGLAttributeTextureCoordinate )
+
+        if( textureId != OpenGLUtils.NO_TEXTURE ){
+            GLES20.glActiveTexture( GLES20.GL_TEXTURE0 )
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES,textureId )
+            GLES20.glUniform1i( mGLUniformTexture,0 )//对应纹理的第一层
+        }
+
+        onDrawArraysPre()
+        GLES20.glDrawArrays( GLES20.GL_TRIANGLE_STRIP,0,4)
+        GLES20.glDisableVertexAttribArray( mGLAttributePosition )
+        GLES20.glDisableVertexAttribArray( mGLAttributeTextureCoordinate )
+
+        GLES20.glBindTexture( GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
+
 
         GLES20.glBindFramebuffer( GLES20.GL_FRAMEBUFFER, 0 )
         GLES20.glViewport( 0,0,mSurfaceWidth,mSurfaceHeight )
+        Log.e("OpenGL", "filter draw frame finish ")
 
         return mFrameBufferTextures!![0]
     }
@@ -45,8 +85,6 @@ class CameraInputFilter() :GLFilter(CAMERA_INPUT_VERTEX_SHADER, CAMERA_INPUT_FRA
         if( mFrameBuffers != null && ( mOutputWidth != width || mOutputHeight != height ) ){
             destroyFrameBuffers()
         }
-        mFrameBuffers?:return
-
         mOutputHeight = height
         mOutputWidth = width
         onOutputSizeChanged( mOutputWidth, mOutputHeight )
@@ -110,7 +148,7 @@ class CameraInputFilter() :GLFilter(CAMERA_INPUT_VERTEX_SHADER, CAMERA_INPUT_FRA
                 "\n" +
                 "void main()\n" +
                 "{\n" +
-                "	gl_FragColor = texture2D(inputImageTexture, textureCoordinate);\n" +
+                "	gl_FragColor = vec4(0.0,1.0,0.0,0.0);\n" +
                 "}"
     }
 
